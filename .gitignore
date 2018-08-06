@@ -1,4 +1,5 @@
 st
+config.h
 *.o
 *.orig
 *.diff
