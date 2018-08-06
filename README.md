@@ -4,6 +4,15 @@ Forked from the [suckless terminal (st)](https://st.suckless.org/).
 
 > st is a simple terminal emulator for X which sucks less.
 
+## Installation and requirements
+
+Requires fontconfig, libX11 ,libXft, and obviously make.
+
+```
+make
+sudo make clean install
+```
+
 ## Patches and changes
 
 * [Alpha patch](https://st.suckless.org/patches/alpha/)
