@@ -35,17 +35,28 @@
 #define ESC_ARG_SIZ   16
 #define STR_BUF_SIZ   ESC_BUF_SIZ
 #define STR_ARG_SIZ   ESC_ARG_SIZ
+#define HISTSIZE      2000
 
 /* macros */
 #define IS_SET(flag)		((term.mode & (flag)) != 0)
-#define NUMMAXLEN(x)		((int)(sizeof(x) * 2.56 + 0.5) + 1)
 #define ISCONTROLC0(c)		(BETWEEN(c, 0, 0x1f) || (c) == '\177')
 #define ISCONTROLC1(c)		(BETWEEN(c, 0x80, 0x9f))
 #define ISCONTROL(c)		(ISCONTROLC0(c) || ISCONTROLC1(c))
 #define ISDELIM(u)		(utf8strchr(worddelimiters, u) != NULL)
+#define TLINE(y)		((y) < term.scr ? term.hist[((y) + term.histi - \
+				term.scr + HISTSIZE + 1) % HISTSIZE] : \
+				term.line[(y) - term.scr])
 
-/* constants */
-#define ISO14755CMD		"dmenu -w \"$WINDOWID\" -p codepoint: </dev/null"
+enum term_mode {
+	MODE_WRAP        = 1 << 0,
+	MODE_INSERT      = 1 << 1,
+	MODE_ALTSCREEN   = 1 << 2,
+	MODE_CRLF        = 1 << 3,
+	MODE_ECHO        = 1 << 4,
+	MODE_PRINT       = 1 << 5,
+	MODE_UTF8        = 1 << 6,
+	MODE_SIXEL       = 1 << 7,
+};
 
 enum cursor_movement {
 	CURSOR_SAVE,
@@ -727,8 +738,10 @@ sigchld(int a)
 	if (pid != p)
 		return;
 
-	if (!WIFEXITED(stat) || WEXITSTATUS(stat))
-		die("child finished with error '%d'\n", stat);
+	if (WIFEXITED(stat) && WEXITSTATUS(stat))
+		die("child exited with status %d\n", WEXITSTATUS(stat));
+	else if (WIFSIGNALED(stat))
+		die("child terminated due to signal %d\n", WTERMSIG(stat));
 	exit(0);
 }
 
@@ -835,9 +848,6 @@ ttyread(void)
 	/* keep any uncomplete utf8 char for the next call */
 	if (buflen > 0)
 		memmove(buf, buf + written, buflen);
-
-	if (term.scr > 0 && term.scr < HISTSIZE-1)
-		term.scr++;
 
 	return ret;
 }
@@ -1048,6 +1058,11 @@ tnew(int col, int row)
 	treset();
 }
 
+int tisaltscr(void)
+{
+	return IS_SET(MODE_ALTSCREEN);
+}
+
 void
 tswapscreen(void)
 {
@@ -1092,7 +1107,6 @@ kscrollup(const Arg* a)
 	}
 }
 
-
 void
 tscrolldown(int orig, int n, int copyhist)
 {
@@ -1134,6 +1148,9 @@ tscrollup(int orig, int n, int copyhist)
 		term.hist[term.histi] = term.line[orig];
 		term.line[orig] = temp;
 	}
+
+	if (term.scr > 0 && term.scr < HISTSIZE)
+		term.scr = MIN(term.scr + n, HISTSIZE-1);
 
 	tclearregion(0, orig, term.col-1, orig+n-1);
 	tsetdirt(orig+n, term.bot);
@@ -1502,7 +1519,8 @@ tsetattr(int *attr, int l)
 			} else {
 				fprintf(stderr,
 					"erresc(default): gfx attr %d unknown\n",
-					attr[i]), csidump();
+					attr[i]);
+				csidump();
 			}
 			break;
 		}
@@ -2028,28 +2046,6 @@ tprinter(char *s, size_t len)
 }
 
 void
-iso14755(const Arg *arg)
-{
-	FILE *p;
-	char *us, *e, codepoint[9], uc[UTF_SIZ];
-	unsigned long utf32;
-
-	if (!(p = popen(ISO14755CMD, "r")))
-		return;
-
-	us = fgets(codepoint, sizeof(codepoint), p);
-	pclose(p);
-
-	if (!us || *us == '\0' || *us == '-' || strlen(us) > 7)
-		return;
-	if ((utf32 = strtoul(us, &e, 16)) == ULONG_MAX ||
-	    (*e != '\n' && *e != '\0'))
-		return;
-
-	ttywrite(uc, utf8encode(utf32, uc), 1);
-}
-
-void
 toggleprinter(const Arg *arg)
 {
 	term.mode ^= MODE_PRINT;
@@ -2333,7 +2329,7 @@ eschandle(uchar ascii)
 	case 'Z': /* DECID -- Identify Terminal */
 		ttywrite(vtiden, strlen(vtiden), 0);
 		break;
-	case 'c': /* RIS -- Reset to inital state */
+	case 'c': /* RIS -- Reset to initial state */
 		treset();
 		resettitle();
 		xloadcols();
@@ -2589,7 +2585,7 @@ tresize(int col, int row)
 		}
 	}
 
-	/* resize each r w to new width, zero-pad if needed */
+	/* resize each row to new width, zero-pad if needed */
 	for (i = 0; i < minrow; i++) {
 		term.line[i] = xrealloc(term.line[i], col * sizeof(Glyph));
 		term.alt[i]  = xrealloc(term.alt[i],  col * sizeof(Glyph));
@@ -2667,10 +2663,9 @@ draw(void)
 		cx--;
 
 	drawregion(0, 0, term.col, term.row);
-	if (term.scr == 0) {
+	if (term.scr == 0)
 		xdrawcursor(cx, term.c.y, term.line[term.c.y][cx],
 				term.ocx, term.ocy, term.line[term.ocy][term.ocx]);
-	}
 	term.ocx = cx, term.ocy = term.c.y;
 	xfinishdraw();
 }
