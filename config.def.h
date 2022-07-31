@@ -129,7 +129,7 @@ const char *colorname[] = {
 unsigned int defaultfg = 256; /* nord4 */
 unsigned int defaultbg = 257; /* nord0 */
 unsigned int defaultcs = 256; /* nord4 */
-unsigned int defaultrcs = 8;  /* nord3 */
+static unsigned int defaultrcs = 8;  /* nord3 */
 
 /*
  * Default shape of cursor
